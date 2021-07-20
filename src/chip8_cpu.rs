@@ -49,8 +49,7 @@ impl Chip8Cpu {
     }
 
     pub fn emulate(&mut self) {
-        let mut loop_helper = LoopHelper::builder()
-            .build_with_target_rate(60.0);
+        let mut loop_helper = LoopHelper::builder().build_with_target_rate(60.0);
 
         loop {
             self.next();
@@ -72,8 +71,8 @@ impl Chip8Cpu {
 
     pub(crate) fn next(&mut self) {
         // Fetch op_code
-        let op_code: u16 =
-            ((self.memory[self.pc as usize] as u16) << 8) | self.memory[self.pc as usize + 1] as u16;
+        let op_code: u16 = ((self.memory[self.pc as usize] as u16) << 8)
+            | self.memory[self.pc as usize + 1] as u16;
 
         // Decode op_code & execute
         self.decode(op_code);

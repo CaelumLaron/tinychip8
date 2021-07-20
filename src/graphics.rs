@@ -60,7 +60,7 @@ impl Graphics {
                     Button::Keyboard(Key::X) => key[KeyMap::X as usize] = 1,
                     Button::Keyboard(Key::C) => key[KeyMap::C as usize] = 1,
                     Button::Keyboard(Key::V) => key[KeyMap::V as usize] = 1,
-                    _ => () ,
+                    _ => (),
                 }
             }
         }
