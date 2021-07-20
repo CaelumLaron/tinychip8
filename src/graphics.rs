@@ -44,10 +44,10 @@ impl Graphics {
             key.fill_with(Default::default);
             if let Some(but) = event.press_args() {
                 match but {
-                    Button::Keyboard(Key::NumPad1) => key[KeyMap::NumPad1 as usize] = 1,
-                    Button::Keyboard(Key::NumPad2) => key[KeyMap::NumPad2 as usize] = 1,
-                    Button::Keyboard(Key::NumPad3) => key[KeyMap::NumPad3 as usize] = 1,
-                    Button::Keyboard(Key::NumPad4) => key[KeyMap::NumPad4 as usize] = 1,
+                    Button::Keyboard(Key::D1) => key[KeyMap::NumPad1 as usize] = 1,
+                    Button::Keyboard(Key::D2) => key[KeyMap::NumPad2 as usize] = 1,
+                    Button::Keyboard(Key::D3) => key[KeyMap::NumPad3 as usize] = 1,
+                    Button::Keyboard(Key::D4) => key[KeyMap::NumPad4 as usize] = 1,
                     Button::Keyboard(Key::Q) => key[KeyMap::Q as usize] = 1,
                     Button::Keyboard(Key::W) => key[KeyMap::W as usize] = 1,
                     Button::Keyboard(Key::E) => key[KeyMap::E as usize] = 1,
@@ -104,15 +104,27 @@ impl Graphics {
             let pixel_size = self.pixel_size;
             self.window.draw_2d(&event, |context, graphics, _device| {
                 for (idx, value) in gfx.iter().enumerate() {
-                    let x_line = idx as u32 % width + 10;
-                    let y_line = idx as u32 / width + 10;
+                    let x_line = idx as u32 % width;
+                    let y_line = idx as u32 / width;
 
                     if *value == 1 {
                         rectangle(
                             [1.0, 1.0, 1.0, 1.0],
                             [
-                                x_line as f64,
-                                y_line as f64,
+                                (x_line * 10) as f64,
+                                (y_line * 10) as f64,
+                                pixel_size as f64,
+                                pixel_size as f64,
+                            ],
+                            context.transform,
+                            graphics,
+                        );
+                    } else {
+                        rectangle(
+                            [0.0, 0.0, 0.0, 1.0],
+                            [
+                                (x_line * 10) as f64,
+                                (y_line * 10) as f64,
                                 pixel_size as f64,
                                 pixel_size as f64,
                             ],

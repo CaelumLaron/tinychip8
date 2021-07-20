@@ -1,6 +1,6 @@
 use crate::constants;
 use crate::graphics::Graphics;
-use std::{thread, time};
+use spin_sleep::LoopHelper;
 
 pub(crate) struct Chip8Cpu {
     memory: [u8; 4096],
@@ -19,7 +19,7 @@ pub(crate) struct Chip8Cpu {
 
 impl Chip8Cpu {
     pub(crate) fn start() -> Self {
-        let pc = 0x200;
+        let pc = 512;
         let mut memory = [0; 4096];
 
         memory[..80].clone_from_slice(&constants::FONT_SET[..80]);
@@ -49,7 +49,8 @@ impl Chip8Cpu {
     }
 
     pub fn emulate(&mut self) {
-        let delay = time::Duration::from_secs_f64(1.0 / 59.0);
+        let mut loop_helper = LoopHelper::builder()
+            .build_with_target_rate(60.0);
 
         loop {
             self.next();
@@ -61,7 +62,7 @@ impl Chip8Cpu {
 
             self.set_keys();
 
-            thread::sleep(delay);
+            loop_helper.loop_sleep();
         }
     }
 
@@ -72,7 +73,7 @@ impl Chip8Cpu {
     pub(crate) fn next(&mut self) {
         // Fetch op_code
         let op_code: u16 =
-            (self.memory[self.pc as usize] as u16) << 8 | self.memory[self.pc as usize + 1] as u16;
+            ((self.memory[self.pc as usize] as u16) << 8) | self.memory[self.pc as usize + 1] as u16;
 
         // Decode op_code & execute
         self.decode(op_code);
@@ -216,7 +217,7 @@ impl Chip8Cpu {
 
         if self.sound_timer > 0 {
             if self.sound_timer == 1 {
-                println!("BEEP");
+                print!("\x07");
             }
             self.sound_timer -= 1;
         }
@@ -225,16 +226,17 @@ impl Chip8Cpu {
     fn cls(&mut self) {
         self.gfx.fill_with(Default::default);
         self.draw_flag = true;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn rts(&mut self) {
         self.pc = self.stack[self.sp as usize - 1];
         self.sp -= 1;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn rca(&mut self) {
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn jump(&mut self, nnn: u16) {
@@ -249,53 +251,53 @@ impl Chip8Cpu {
 
     fn skip_eq(&mut self, x: u16, kk: u16) {
         if self.v[x as usize] == kk as u8 {
-            self.pc += 2;
+            self.pc = (self.pc + 2) & 0x0FFF;
         }
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn skip_ne(&mut self, x: u16, kk: u16) {
         if self.v[x as usize] != kk as u8 {
-            self.pc += 2;
+            self.pc = (self.pc + 2) & 0x0FFF;
         }
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn skip_eqr(&mut self, x: u16, y: u16) {
         if self.v[x as usize] == self.v[y as usize] {
-            self.pc += 2;
+            self.pc = (self.pc + 2) & 0x0FFF;
         }
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load(&mut self, x: u16, kk: u16) {
         self.v[x as usize] = kk as u8;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn add_c(&mut self, x: u16, kk: u16) {
-        self.v[x as usize] += kk as u8;
-        self.pc += 2;
+        self.v[x as usize] = self.v[x as usize].wrapping_add(kk as u8);
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn mov(&mut self, x: u16, y: u16) {
         self.v[x as usize] = self.v[y as usize];
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn or(&mut self, x: u16, y: u16) {
-        self.v[x as usize] |= self.v[y as usize];
-        self.pc += 2;
+        self.v[x as usize] = self.v[x as usize] | self.v[y as usize];
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn and(&mut self, x: u16, y: u16) {
         self.v[x as usize] &= self.v[y as usize];
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn xor(&mut self, x: u16, y: u16) {
         self.v[x as usize] ^= self.v[y as usize];
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn add(&mut self, x: u16, y: u16) {
@@ -305,7 +307,7 @@ impl Chip8Cpu {
             0
         };
         self.v[x as usize] = self.v[x as usize].wrapping_add(self.v[y as usize]);
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn sub(&mut self, x: u16, y: u16) {
@@ -315,13 +317,13 @@ impl Chip8Cpu {
             1
         };
         self.v[x as usize] = self.v[x as usize].wrapping_sub(self.v[y as usize]);
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn shr(&mut self, x: u16) {
         self.v[0xF] = self.v[x as usize] & 1;
         self.v[x as usize] >>= 1;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn subn(&mut self, x: u16, y: u16) {
@@ -331,34 +333,34 @@ impl Chip8Cpu {
             1
         };
         self.v[x as usize] = self.v[y as usize].wrapping_sub(self.v[x as usize]);
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn shl(&mut self, x: u16) {
         self.v[0xF] = self.v[x as usize] & 0x80;
         self.v[x as usize] <<= 1;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn skip_ner(&mut self, x: u16, y: u16) {
         if self.v[x as usize] != self.v[y as usize] {
-            self.pc += 2;
+            self.pc = (self.pc + 2) & 0x0FFF;
         }
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load_addr(&mut self, nnn: u16) {
         self.i = nnn;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn jump_r(&mut self, nnn: u16) {
-        self.pc = nnn + self.v[0x0] as u16;
+        self.pc = (nnn + self.v[0x0] as u16) & 0x0FFF;
     }
 
     fn rnd(&mut self, x: u16, kk: u16) {
         self.v[x as usize] = (kk as u8) & rand::random::<u8>();
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn drw(&mut self, x: u16, y: u16, n: u16) {
@@ -368,84 +370,83 @@ impl Chip8Cpu {
             let pixel = self.memory[(self.i + yline as u16) as usize];
             for xline in 0..8_u16 {
                 if (pixel & (0x80 >> xline)) != 0 {
-                    if self.gfx[((x + xline + ((y + yline) * 64)) % (32 * 64)) as usize] == 1 {
+                    let pos_x = (self.v[x as usize] as u16 + xline) % 64;
+                    let pos_y = (self.v[y as usize] as u16 + yline) % 32;
+                    let pos_pixel = (pos_x + (pos_y * 64)) as usize;
+                    if self.gfx[pos_pixel] == 1 {
                         self.v[0xF] = 1;
                     }
-                    self.gfx[((x + xline + ((y + yline) * 64)) % (32 * 64)) as usize] ^= 1;
+                    self.gfx[pos_pixel] ^= 1;
                 }
             }
         }
         self.draw_flag = true;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn skip_key_pressed(&mut self, x: u16) {
         if self.key[self.v[x as usize] as usize] != 0 {
-            self.pc += 2;
+            self.pc = (self.pc + 2) & 0x0FFF;
         }
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn skip_key_npressed(&mut self, x: u16) {
         if self.key[self.v[x as usize] as usize] == 0 {
-            self.pc += 2;
+            self.pc = (self.pc + 2) & 0x0FFF;
         }
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load_rdt(&mut self, x: u16) {
         self.v[x as usize] = self.delay_timer;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load_key(&mut self, x: u16) {
         let key = self.interface.wait_key();
         self.v[x as usize] = key as u8;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load_dtr(&mut self, x: u16) {
         self.delay_timer = self.v[x as usize];
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load_str(&mut self, x: u16) {
         self.sound_timer = self.v[x as usize];
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn addi(&mut self, x: u16) {
-        self.i += self.v[x as usize] as u16;
-        self.pc += 2;
+        self.i = (self.i + self.v[x as usize] as u16) & 0xFFF;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load_fi(&mut self, x: u16) {
         self.i = 5 * self.v[x as usize] as u16;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load_mem(&mut self, x: u16) {
         self.memory[self.i as usize] = self.v[x as usize] / 100;
-        self.memory[self.i as usize + 1] = (self.v[x as usize] / 10) % 10;
+        self.memory[self.i as usize + 1] = (self.v[x as usize] % 100) / 10;
         self.memory[self.i as usize + 2] = self.v[x as usize] % 10;
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load_memi(&mut self, x: u16) {
-        let mut i = self.i as usize;
-        for x in 0..=x as usize {
-            self.memory[i] = self.v[x];
-            i += 1;
+        for i in 0..=x as usize {
+            self.memory[self.i as usize + i] = self.v[i];
         }
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 
     fn load_ri(&mut self, x: u16) {
-        let mut i = self.i as usize;
-        for x in 0..=x as usize {
-            self.v[x] = self.memory[i];
-            i += 1;
+        for i in 0..=x as usize {
+            self.v[i] = self.memory[self.i as usize + i];
         }
-        self.pc += 2;
+        self.pc = (self.pc + 2) & 0x0FFF;
     }
 }

@@ -7,4 +7,5 @@ edition = "2018"
 
 [dependencies]
 piston_window = "*"
+spin_sleep = "1.0.0"
 rand = "0.8.4"
