@@ -33,35 +33,52 @@ impl Graphics {
             width,
             pixel_size,
             window: WindowSettings::new("TinyChip8", [width * pixel_size, height * pixel_size])
-                .exit_on_esc(true)
                 .build()
                 .unwrap(),
         }
     }
 
-    pub(crate) fn set_keys(&mut self, key: &mut [u8; 16]) {
-        if let Some(event) = self.window.next() {
-            key.fill_with(Default::default);
-            if let Some(but) = event.press_args() {
-                match but {
-                    Button::Keyboard(Key::D1) => key[KeyMap::NumPad1 as usize] = 1,
-                    Button::Keyboard(Key::D2) => key[KeyMap::NumPad2 as usize] = 1,
-                    Button::Keyboard(Key::D3) => key[KeyMap::NumPad3 as usize] = 1,
-                    Button::Keyboard(Key::D4) => key[KeyMap::NumPad4 as usize] = 1,
-                    Button::Keyboard(Key::Q) => key[KeyMap::Q as usize] = 1,
-                    Button::Keyboard(Key::W) => key[KeyMap::W as usize] = 1,
-                    Button::Keyboard(Key::E) => key[KeyMap::E as usize] = 1,
-                    Button::Keyboard(Key::R) => key[KeyMap::R as usize] = 1,
-                    Button::Keyboard(Key::A) => key[KeyMap::A as usize] = 1,
-                    Button::Keyboard(Key::S) => key[KeyMap::S as usize] = 1,
-                    Button::Keyboard(Key::D) => key[KeyMap::D as usize] = 1,
-                    Button::Keyboard(Key::F) => key[KeyMap::F as usize] = 1,
-                    Button::Keyboard(Key::Z) => key[KeyMap::Z as usize] = 1,
-                    Button::Keyboard(Key::X) => key[KeyMap::X as usize] = 1,
-                    Button::Keyboard(Key::C) => key[KeyMap::C as usize] = 1,
-                    Button::Keyboard(Key::V) => key[KeyMap::V as usize] = 1,
-                    _ => (),
-                }
+    pub(crate) fn set_keys(&mut self, event: &Event, key: &mut [u8; 16]) {
+        if let Some(but) = event.press_args() {
+            match but {
+                Button::Keyboard(Key::D1) => key[KeyMap::NumPad1 as usize] = 1,
+                Button::Keyboard(Key::D2) => key[KeyMap::NumPad2 as usize] = 1,
+                Button::Keyboard(Key::D3) => key[KeyMap::NumPad3 as usize] = 1,
+                Button::Keyboard(Key::D4) => key[KeyMap::NumPad4 as usize] = 1,
+                Button::Keyboard(Key::Q) => key[KeyMap::Q as usize] = 1,
+                Button::Keyboard(Key::W) => key[KeyMap::W as usize] = 1,
+                Button::Keyboard(Key::E) => key[KeyMap::E as usize] = 1,
+                Button::Keyboard(Key::R) => key[KeyMap::R as usize] = 1,
+                Button::Keyboard(Key::A) => key[KeyMap::A as usize] = 1,
+                Button::Keyboard(Key::S) => key[KeyMap::S as usize] = 1,
+                Button::Keyboard(Key::D) => key[KeyMap::D as usize] = 1,
+                Button::Keyboard(Key::F) => key[KeyMap::F as usize] = 1,
+                Button::Keyboard(Key::Z) => key[KeyMap::Z as usize] = 1,
+                Button::Keyboard(Key::X) => key[KeyMap::X as usize] = 1,
+                Button::Keyboard(Key::C) => key[KeyMap::C as usize] = 1,
+                Button::Keyboard(Key::V) => key[KeyMap::V as usize] = 1,
+                _ => (),
+            }
+        }
+        if let Some(but) = event.release_args() {
+            match but {
+                Button::Keyboard(Key::D1) => key[KeyMap::NumPad1 as usize] = 0,
+                Button::Keyboard(Key::D2) => key[KeyMap::NumPad2 as usize] = 0,
+                Button::Keyboard(Key::D3) => key[KeyMap::NumPad3 as usize] = 0,
+                Button::Keyboard(Key::D4) => key[KeyMap::NumPad4 as usize] = 0,
+                Button::Keyboard(Key::Q) => key[KeyMap::Q as usize] = 0,
+                Button::Keyboard(Key::W) => key[KeyMap::W as usize] = 0,
+                Button::Keyboard(Key::E) => key[KeyMap::E as usize] = 0,
+                Button::Keyboard(Key::R) => key[KeyMap::R as usize] = 0,
+                Button::Keyboard(Key::A) => key[KeyMap::A as usize] = 0,
+                Button::Keyboard(Key::S) => key[KeyMap::S as usize] = 0,
+                Button::Keyboard(Key::D) => key[KeyMap::D as usize] = 0,
+                Button::Keyboard(Key::F) => key[KeyMap::F as usize] = 0,
+                Button::Keyboard(Key::Z) => key[KeyMap::Z as usize] = 0,
+                Button::Keyboard(Key::X) => key[KeyMap::X as usize] = 0,
+                Button::Keyboard(Key::C) => key[KeyMap::C as usize] = 0,
+                Button::Keyboard(Key::V) => key[KeyMap::V as usize] = 0,
+                _ => (),
             }
         }
     }
@@ -98,30 +115,27 @@ impl Graphics {
         }
     }
 
-    pub(crate) fn update_screen(&mut self, gfx: &[u8]) {
+    pub(crate) fn clear_screen(&mut self) {
+        if let Some(event) = self.window.next() {
+            self.window.draw_2d(&event, |_context, graphics, _device| {
+                clear([0.0; 4], graphics);
+            });
+        }
+    }
+
+    pub(crate) fn tick(&mut self, gfx: &[u8], key: &mut [u8; 16]) {
         if let Some(event) = self.window.next() {
             let width = self.width;
             let pixel_size = self.pixel_size;
             self.window.draw_2d(&event, |context, graphics, _device| {
-                for (idx, value) in gfx.iter().enumerate() {
+                clear([0.0; 4], graphics);
+                for (idx, &value) in gfx.iter().enumerate() {
                     let x_line = idx as u32 % width;
                     let y_line = idx as u32 / width;
 
-                    if *value == 1 {
+                    if value == 1 {
                         rectangle(
                             [1.0, 1.0, 1.0, 1.0],
-                            [
-                                (x_line * 10) as f64,
-                                (y_line * 10) as f64,
-                                pixel_size as f64,
-                                pixel_size as f64,
-                            ],
-                            context.transform,
-                            graphics,
-                        );
-                    } else {
-                        rectangle(
-                            [0.0, 0.0, 0.0, 1.0],
                             [
                                 (x_line * 10) as f64,
                                 (y_line * 10) as f64,
@@ -134,6 +148,7 @@ impl Graphics {
                     }
                 }
             });
+            self.set_keys(&event, key);
         }
     }
 }

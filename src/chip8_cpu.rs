@@ -1,6 +1,6 @@
 use crate::constants;
 use crate::graphics::Graphics;
-use spin_sleep::LoopHelper;
+use std::time::Instant;
 
 pub(crate) struct Chip8Cpu {
     memory: [u8; 4096],
@@ -49,27 +49,22 @@ impl Chip8Cpu {
     }
 
     pub fn emulate(&mut self) {
-        let mut loop_helper = LoopHelper::builder().build_with_target_rate(60.0);
-
+        let mut last_time_cycle = Instant::now();
+        let mut last_time_tick = Instant::now();
         loop {
-            self.next();
-
-            if self.draw_flag {
-                self.interface.update_screen(&self.gfx);
-                self.draw_flag = false;
+            if last_time_cycle.elapsed().as_millis() > 16 {
+                self.cycle();
+                last_time_cycle = Instant::now();
             }
 
-            self.set_keys();
-
-            loop_helper.loop_sleep();
+            if last_time_tick.elapsed().as_millis() > 8 {
+                self.interface.tick(&self.gfx, &mut self.key);
+                last_time_tick = Instant::now();
+            }
         }
     }
 
-    fn set_keys(&mut self) {
-        self.interface.set_keys(&mut self.key);
-    }
-
-    pub(crate) fn next(&mut self) {
+    fn cycle(&mut self) {
         // Fetch op_code
         let op_code: u16 = ((self.memory[self.pc as usize] as u16) << 8)
             | self.memory[self.pc as usize + 1] as u16;
@@ -90,122 +85,52 @@ impl Chip8Cpu {
 
         match op_code & 0xF000 {
             0x0000 => match op_code & 0x00FF {
-                0x000E => {
-                    self.cls();
-                }
-                0x00EE => {
-                    self.rts();
-                }
-                _ => {
-                    self.rca();
-                }
+                0x000E => self.cls(),
+                0x00EE => self.ret(),
+                _ => self.sys(),
             },
-            0x1000 => {
-                self.jump(nnn);
-            }
-            0x2000 => {
-                self.call(nnn);
-            }
-            0x3000 => {
-                self.skip_eq(x, kk);
-            }
-            0x4000 => {
-                self.skip_ne(x, kk);
-            }
-            0x5000 => {
-                self.skip_eqr(x, y);
-            }
-            0x6000 => {
-                self.load(x, kk);
-            }
-            0x7000 => {
-                self.add_c(x, kk);
-            }
+            0x1000 => self.jp_nnn(nnn),
+            0x2000 => self.call_nnn(nnn),
+            0x3000 => self.se_vx_kk(x, kk),
+            0x4000 => self.sne_vx_kk(x, kk),
+            0x5000 => self.se_vx_vy(x, y),
+            0x6000 => self.ld_vx_kk(x, kk),
+            0x7000 => self.add_vx_kk(x, kk),
             0x8000 => match op_code & 0x000F {
-                0x0000 => {
-                    self.mov(x, y);
-                }
-                0x0001 => {
-                    self.or(x, y);
-                }
-                0x0002 => {
-                    self.and(x, y);
-                }
-                0x0003 => {
-                    self.xor(x, y);
-                }
-                0x0004 => {
-                    self.add(x, y);
-                }
-                0x0005 => {
-                    self.sub(x, y);
-                }
-                0x0006 => {
-                    self.shr(x);
-                }
-                0x0007 => {
-                    self.subn(x, y);
-                }
-                0x000E => {
-                    self.shl(x);
-                }
-                _ => (println!("Unknown opcode [0x800N]: {:X}", op_code)),
+                0x0000 => self.ld_vx_vy(x, y),
+                0x0001 => self.or_vx_vy(x, y),
+                0x0002 => self.and_vx_vy(x, y),
+                0x0003 => self.xor_vx_vy(x, y),
+                0x0004 => self.add_vx_vy(x, y),
+                0x0005 => self.sub_vx_vy(x, y),
+                0x0006 => self.shr(x),
+                0x0007 => self.subn_vx_vy(x, y),
+                0x000E => self.shl(x),
+                _ => println!("Unknown opcode [0x800N]: {:X}", op_code),
             },
-            0x9000 => {
-                self.skip_ner(x, y);
-            }
-            0xA000 => {
-                self.load_addr(nnn);
-            }
-            0xB000 => {
-                self.jump_r(nnn);
-            }
-            0xC000 => {
-                self.rnd(x, kk);
-            }
-            0xD000 => {
-                self.drw(x, y, n);
-            }
+            0x9000 => self.sne_vx_vy(x, y),
+            0xA000 => self.ld_i_nnn(nnn),
+            0xB000 => self.jp_v0_nnn(nnn),
+            0xC000 => self.rnd_vx_kk(x, kk),
+            0xD000 => self.drw_vx_vy_n(x, y, n),
             0xE000 => match op_code & 0x00FF {
-                0x009E => {
-                    self.skip_key_pressed(x);
-                }
-                0x00A1 => {
-                    self.skip_key_npressed(x);
-                }
-                _ => (println!("Unknown opcode [0xE000]: 0x{:X}", op_code)),
+                0x009E => self.skp_vx(x),
+                0x00A1 => self.sknp_vx(x),
+                _ => println!("Unknown opcode [0xE000]: 0x{:X}", op_code),
             },
             0xF000 => match op_code & 0x00FF {
-                0x0007 => {
-                    self.load_rdt(x);
-                }
-                0x000A => {
-                    self.load_key(x);
-                }
-                0x0015 => {
-                    self.load_dtr(x);
-                }
-                0x0018 => {
-                    self.load_str(x);
-                }
-                0x001E => {
-                    self.addi(x);
-                }
-                0x0029 => {
-                    self.load_fi(x);
-                }
-                0x0033 => {
-                    self.load_mem(x);
-                }
-                0x0055 => {
-                    self.load_memi(x);
-                }
-                0x0065 => {
-                    self.load_ri(x);
-                }
-                _ => (println!("Unknown opcode [0xF000]: 0x{:X}", op_code)),
+                0x0007 => self.ld_vx_dt(x),
+                0x000A => self.ld_vx_k(x),
+                0x0015 => self.ld_dt_vx(x),
+                0x0018 => self.ld_st_vx(x),
+                0x001E => self.add_i_vx(x),
+                0x0029 => self.ld_f_vx(x),
+                0x0033 => self.ld_b_vx(x),
+                0x0055 => self.ld_i_vx(x),
+                0x0065 => self.ld_vx_i(x),
+                _ => println!("Unknown opcode [0xF000]: 0x{:X}", op_code),
             },
-            _ => (println!("Unknown opcode: 0x{:X}", op_code)),
+            _ => println!("Unknown opcode: 0x{:X}", op_code),
         }
     }
 
@@ -228,78 +153,78 @@ impl Chip8Cpu {
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn rts(&mut self) {
-        self.pc = self.stack[self.sp as usize - 1];
+    fn ret(&mut self) {
         self.sp -= 1;
+        self.pc = self.stack[self.sp as usize];
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn rca(&mut self) {
+    fn sys(&mut self) {
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn jump(&mut self, nnn: u16) {
+    fn jp_nnn(&mut self, nnn: u16) {
         self.pc = nnn;
     }
 
-    fn call(&mut self, nnn: u16) {
+    fn call_nnn(&mut self, nnn: u16) {
         self.stack[self.sp as usize] = self.pc;
         self.sp += 1;
         self.pc = nnn;
     }
 
-    fn skip_eq(&mut self, x: u16, kk: u16) {
+    fn se_vx_kk(&mut self, x: u16, kk: u16) {
         if self.v[x as usize] == kk as u8 {
             self.pc = (self.pc + 2) & 0x0FFF;
         }
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn skip_ne(&mut self, x: u16, kk: u16) {
+    fn sne_vx_kk(&mut self, x: u16, kk: u16) {
         if self.v[x as usize] != kk as u8 {
             self.pc = (self.pc + 2) & 0x0FFF;
         }
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn skip_eqr(&mut self, x: u16, y: u16) {
+    fn se_vx_vy(&mut self, x: u16, y: u16) {
         if self.v[x as usize] == self.v[y as usize] {
             self.pc = (self.pc + 2) & 0x0FFF;
         }
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load(&mut self, x: u16, kk: u16) {
+    fn ld_vx_kk(&mut self, x: u16, kk: u16) {
         self.v[x as usize] = kk as u8;
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn add_c(&mut self, x: u16, kk: u16) {
+    fn add_vx_kk(&mut self, x: u16, kk: u16) {
         self.v[x as usize] = self.v[x as usize].wrapping_add(kk as u8);
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn mov(&mut self, x: u16, y: u16) {
+    fn ld_vx_vy(&mut self, x: u16, y: u16) {
         self.v[x as usize] = self.v[y as usize];
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn or(&mut self, x: u16, y: u16) {
+    fn or_vx_vy(&mut self, x: u16, y: u16) {
         self.v[x as usize] = self.v[x as usize] | self.v[y as usize];
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn and(&mut self, x: u16, y: u16) {
-        self.v[x as usize] &= self.v[y as usize];
+    fn and_vx_vy(&mut self, x: u16, y: u16) {
+        self.v[x as usize] = self.v[x as usize] & self.v[y as usize];
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn xor(&mut self, x: u16, y: u16) {
-        self.v[x as usize] ^= self.v[y as usize];
+    fn xor_vx_vy(&mut self, x: u16, y: u16) {
+        self.v[x as usize] = self.v[x as usize] ^ self.v[y as usize];
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn add(&mut self, x: u16, y: u16) {
+    fn add_vx_vy(&mut self, x: u16, y: u16) {
         self.v[0xF] = if self.v[y as usize] > 255 - self.v[x as usize] {
             1
         } else {
@@ -309,11 +234,11 @@ impl Chip8Cpu {
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn sub(&mut self, x: u16, y: u16) {
-        self.v[0xF] = if self.v[y as usize] > self.v[x as usize] {
-            0
-        } else {
+    fn sub_vx_vy(&mut self, x: u16, y: u16) {
+        self.v[0xF] = if self.v[x as usize] >= self.v[y as usize] {
             1
+        } else {
+            0
         };
         self.v[x as usize] = self.v[x as usize].wrapping_sub(self.v[y as usize]);
         self.pc = (self.pc + 2) & 0x0FFF;
@@ -325,11 +250,11 @@ impl Chip8Cpu {
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn subn(&mut self, x: u16, y: u16) {
-        self.v[0xF] = if self.v[y as usize] < self.v[x as usize] {
-            0
-        } else {
+    fn subn_vx_vy(&mut self, x: u16, y: u16) {
+        self.v[0xF] = if self.v[y as usize] >= self.v[x as usize] {
             1
+        } else {
+            0
         };
         self.v[x as usize] = self.v[y as usize].wrapping_sub(self.v[x as usize]);
         self.pc = (self.pc + 2) & 0x0FFF;
@@ -341,28 +266,28 @@ impl Chip8Cpu {
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn skip_ner(&mut self, x: u16, y: u16) {
+    fn sne_vx_vy(&mut self, x: u16, y: u16) {
         if self.v[x as usize] != self.v[y as usize] {
             self.pc = (self.pc + 2) & 0x0FFF;
         }
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load_addr(&mut self, nnn: u16) {
+    fn ld_i_nnn(&mut self, nnn: u16) {
         self.i = nnn;
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn jump_r(&mut self, nnn: u16) {
+    fn jp_v0_nnn(&mut self, nnn: u16) {
         self.pc = (nnn + self.v[0x0] as u16) & 0x0FFF;
     }
 
-    fn rnd(&mut self, x: u16, kk: u16) {
+    fn rnd_vx_kk(&mut self, x: u16, kk: u16) {
         self.v[x as usize] = (kk as u8) & rand::random::<u8>();
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn drw(&mut self, x: u16, y: u16, n: u16) {
+    fn drw_vx_vy_n(&mut self, x: u16, y: u16, n: u16) {
         self.v[0xF] = 0;
 
         for yline in 0..n {
@@ -383,69 +308,72 @@ impl Chip8Cpu {
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn skip_key_pressed(&mut self, x: u16) {
+    fn skp_vx(&mut self, x: u16) {
         if self.key[self.v[x as usize] as usize] != 0 {
             self.pc = (self.pc + 2) & 0x0FFF;
         }
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn skip_key_npressed(&mut self, x: u16) {
+    fn sknp_vx(&mut self, x: u16) {
         if self.key[self.v[x as usize] as usize] == 0 {
             self.pc = (self.pc + 2) & 0x0FFF;
         }
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load_rdt(&mut self, x: u16) {
+    fn ld_vx_dt(&mut self, x: u16) {
         self.v[x as usize] = self.delay_timer;
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load_key(&mut self, x: u16) {
+    fn ld_vx_k(&mut self, x: u16) {
         let key = self.interface.wait_key();
         self.v[x as usize] = key as u8;
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load_dtr(&mut self, x: u16) {
+    fn ld_dt_vx(&mut self, x: u16) {
         self.delay_timer = self.v[x as usize];
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load_str(&mut self, x: u16) {
+    fn ld_st_vx(&mut self, x: u16) {
         self.sound_timer = self.v[x as usize];
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn addi(&mut self, x: u16) {
+    fn add_i_vx(&mut self, x: u16) {
         self.i = (self.i + self.v[x as usize] as u16) & 0xFFF;
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load_fi(&mut self, x: u16) {
+    fn ld_f_vx(&mut self, x: u16) {
         self.i = 5 * self.v[x as usize] as u16;
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load_mem(&mut self, x: u16) {
+    fn ld_b_vx(&mut self, x: u16) {
         self.memory[self.i as usize] = self.v[x as usize] / 100;
         self.memory[self.i as usize + 1] = (self.v[x as usize] % 100) / 10;
         self.memory[self.i as usize + 2] = self.v[x as usize] % 10;
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load_memi(&mut self, x: u16) {
+    fn ld_i_vx(&mut self, x: u16) {
         for i in 0..=x as usize {
             self.memory[self.i as usize + i] = self.v[i];
         }
+        self.i += x + 1;
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 
-    fn load_ri(&mut self, x: u16) {
+    fn ld_vx_i(&mut self, x: u16) {
         for i in 0..=x as usize {
             self.v[i] = self.memory[self.i as usize + i];
         }
+
+        self.i += x + 1;
         self.pc = (self.pc + 2) & 0x0FFF;
     }
 }
